@@ -1,0 +1,57 @@
+name: Build 策枢 PivotDesk（Windows + macOS）
+
+# 用法：把本仓库推送到 GitHub 后，手动触发（workflow_dispatch）或打 tag（v*）自动构建。
+# 产物：Windows NSIS 安装包 + macOS arm64/x86_64 DMG，在 Actions 页面 Artifacts 下载。
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest # Apple Silicon (M1/M2/M3/M4)
+            args: --target aarch64-apple-darwin
+          - platform: macos-latest # Intel Mac
+            args: --target x86_64-apple-darwin
+          - platform: windows-latest # Windows x64
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 构建 Tauri 应用
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: ${{ matrix.args }}
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: 策枢-${{ matrix.platform }}-${{ matrix.args && 'arm64' || 'x64' }}
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: ignore
